@@ -53,10 +53,17 @@ export(TARGETS dispatch_queue FILE dispatch_queue_config.cmake)
 # Every library has unit tests, of course
 enable_testing()
 
-add_executable(tests
+add_executable(test_main
     test/test_main.cpp)
 
-target_link_libraries(tests
+add_executable(test_shared_resource
+    test/test_shared_resource.cpp)
+
+target_link_libraries(test_main
     dispatch_queue)
 
-add_test(tests tests)
+target_link_libraries(test_shared_resource
+    dispatch_queue)
+
+add_test(test_main test_main)
+add_test(test_shared_resource test_shared_resource)

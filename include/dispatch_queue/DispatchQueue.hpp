@@ -28,26 +28,37 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <chrono>
+#include <atomic>
+
+typedef std::function<void(void)> fp_t;
 
 class DispatchQueue
 {
-	typedef std::function<void(void)> fp_t;
-
 public:
 	DispatchQueue(std::string name, size_t thread_count = 1);
 	~DispatchQueue();
 
 	void dispatch(const fp_t& callback);
-	bool empty(void) { return _queue.empty(); };
+	void schedule_on_interval(const fp_t& callback, const unsigned interval_ms);
+	bool empty(void)
+	{
+		std::unique_lock<std::mutex> lock(_lock);
+		return _queue.empty();
+	};
 
 private:
 	void dispatch_thread_handler(void);
+	void timer_callback_dispatch(const fp_t& callback, const unsigned interval_ms);
+	void join_timer_threads(void);
+	void join_worker_threads(void);
 
 	std::string _name;
 	std::queue<fp_t> _queue;
-	std::vector<std::thread> _threads;
+	std::vector<std::thread> _worker_threads;
+	std::vector<std::thread> _timer_threads;
 	std::mutex _lock;
 	std::condition_variable _cv;
 
-	bool _should_exit = false;
+	std::atomic<bool> _should_exit {};
 };
