@@ -99,5 +99,5 @@ void DispatchQueue::dispatch_thread_handler(void)
 		}
 	} while (!_should_exit);
 
-	// lock is automatically unlocked at the end of the scope
+	// lock is automatically released at the end of the scope
 }
