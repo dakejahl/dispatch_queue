@@ -90,23 +90,19 @@ void DispatchQueue::dispatch(const fp_t& callback)
 
 void DispatchQueue::schedule_on_interval(const fp_t& callback, const unsigned interval_ms)
 {
-	// Kick off a thread, put it to sleep, and then have it call the callback
-	auto thread = std::thread(&DispatchQueue::timer_callback_dispatch, this, callback, interval_ms);
-
-	// We want to keep track of our timer threads so we can kill them properly
-	_timer_threads.push_back(std::move(thread));
-}
-
-// TODO: figure out how to make this a lambda... would be more succint
-void DispatchQueue::timer_callback_dispatch(const fp_t& callback, const unsigned interval_ms)
-{
-		// The entire purpose of this function is to run in a thread and only wake up to schedule 
-		// the work item in the DispatchQueue.
+	auto timed_dispatch = [this](const fp_t& callback, const unsigned interval_ms)
+	{
 		do
 		{
-			dispatch(callback);
+			this->dispatch(callback);
 			std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
-		} while (!_should_exit);
+		} while (!this->_should_exit);
+	};
+
+	auto thread = std::thread(timed_dispatch, callback, interval_ms);
+
+	// We want to keep track of our timer threads so we can shut down properly
+	_timer_threads.push_back(std::move(thread));
 }
 
 void DispatchQueue::dispatch_thread_handler(void)

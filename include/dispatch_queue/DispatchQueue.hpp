@@ -49,7 +49,6 @@ public:
 
 private:
 	void dispatch_thread_handler(void);
-	void timer_callback_dispatch(const fp_t& callback, const unsigned interval_ms);
 	void join_timer_threads(void);
 	void join_worker_threads(void);
 
