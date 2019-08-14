@@ -25,7 +25,7 @@
 #include <iostream>
 #include <memory>
 
-#define BIG_NUMBER 100000000
+#define BIG_NUMBER 10000000
 
 unsigned shared_counter = 0;
 bool program_should_exit = false;
@@ -98,12 +98,13 @@ int main()
 	q->dispatch(work6);
 
 	// Schedule our stuff on intervals using shared resource
-	// q->schedule_on_interval(work_item_1, 500);
-	// q->schedule_on_interval(work_item_2, 1000);
-	// q->schedule_on_interval(work_item_3, 2000);
+	q->schedule_on_interval(work1, 1000);
+	q->schedule_on_interval(work2, 2000);
+	q->schedule_on_interval(work4, 3000);
 
 	// Wait for all work to finish
-	while (!program_should_exit)
+	// while (!program_should_exit)
+	while (1)
 	{
 		// busy wait uses entire core -- use some arbitrary polling time
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));

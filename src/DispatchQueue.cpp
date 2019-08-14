@@ -120,16 +120,20 @@ void DispatchQueue::dispatch(const PriorityWorkItem& callback)
 // sleep for that time delta. On wakeup it will just call dispatch().
 void DispatchQueue::schedule_on_interval(const WorkItem& callback, const unsigned interval_ms)
 {
-	auto timed_dispatch = [this](const WorkItem& callback, const unsigned interval_ms)
+	// Scheduling at an interval implies we care about priority. We don't want any jitter to be
+	// induced from asynchronous calls to dispatch().
+	PriorityWorkItem work(callback.work, 0);
+
+	auto timed_dispatch = [this](const PriorityWorkItem& work, const unsigned interval_ms)
 	{
 		do
 		{
-			this->dispatch(callback);
+			this->dispatch(work);
 			std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
 		} while (!this->_should_exit);
 	};
 
-	auto thread = std::thread(timed_dispatch, callback, interval_ms);
+	auto thread = std::thread(timed_dispatch, work, interval_ms);
 
 	// We want to keep track of our timer threads so we can shut down properly.
 	_timer_threads.push_back(std::move(thread));
@@ -169,10 +173,6 @@ void DispatchQueue::dispatch_thread_handler(void)
 				_standard_queue.pop();
 				work = item.work;
 			}
-
-			// TODO: add a check to see if the queue is empty, and if so, signal 
-			// that we are out of useful work to do. Alternatively, run background
-			// tasks here :)
 
 			lock.unlock();
 
