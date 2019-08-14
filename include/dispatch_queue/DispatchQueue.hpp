@@ -23,6 +23,7 @@
 #include <condition_variable>
 #include <functional>
 #include <iostream>
+#include <list>
 #include <queue>
 #include <string>
 #include <thread>
@@ -33,18 +34,41 @@
 
 typedef std::function<void(void)> fp_t;
 
+struct WorkItem
+{
+	WorkItem(fp_t work)
+	: work(work)
+	{}
+
+	fp_t work;
+	// rhianna would be proud^
+};
+
+struct PriorityWorkItem
+{
+	PriorityWorkItem(fp_t work, uint8_t priority)
+	: work(work)
+	, priority(priority)
+	{}
+
+	uint8_t priority;
+	fp_t work;
+};
+
 class DispatchQueue
 {
 public:
 	DispatchQueue(std::string name, size_t thread_count = 1);
 	~DispatchQueue();
 
-	void dispatch(const fp_t& callback);
-	void schedule_on_interval(const fp_t& callback, const unsigned interval_ms);
+	void dispatch(const WorkItem& callback);
+	void dispatch(const PriorityWorkItem& callback);
+
+	void schedule_on_interval(const WorkItem& callback, const unsigned interval_ms);
 	bool empty(void)
 	{
 		std::unique_lock<std::mutex> lock(_lock);
-		return _queue.empty();
+		return _standard_queue.empty();
 	};
 
 private:
@@ -53,7 +77,8 @@ private:
 	void join_worker_threads(void);
 
 	std::string _name;
-	std::queue<fp_t> _queue;
+	std::queue<WorkItem> _standard_queue;
+	std::list<PriorityWorkItem> _priority_queue;
 	std::vector<std::thread> _worker_threads;
 	std::vector<std::thread> _timer_threads;
 	std::mutex _lock;

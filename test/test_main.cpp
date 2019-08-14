@@ -31,7 +31,8 @@ int main()
 	std::cout << "<<<<<<<<< TESTING dispatch_queue >>>>>>>>>>\n\n";
 	auto q = std::make_shared<DispatchQueue>("test_serial_queue");
 
-	q->dispatch([]{ printf("This is a test\n"); });
+	WorkItem work ([]{ printf("This is a test\n"); });
+	q->dispatch(work);
 
 	while (!q->empty())
 	{

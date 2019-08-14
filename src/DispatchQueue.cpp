@@ -36,14 +36,14 @@ DispatchQueue::DispatchQueue(std::string name, size_t thread_count)
 
 DispatchQueue::~DispatchQueue()
 {
-	// Acquire lock to prevent race condition with the thread handler
+	// Acquire lock to prevent race condition with the thread handler.
 	std::unique_lock<std::mutex> lock(_lock);
 	_should_exit = true;
 	lock.unlock();
 
 	_cv.notify_all();
 
-	// Wait for threads to finish their work before we exit
+	// Wait for threads to finish their work before we exit.
 	join_timer_threads();
 	join_worker_threads();
 
@@ -76,21 +76,51 @@ void DispatchQueue::join_worker_threads()
 	}   
 }
 
-// Adds a callback item to the dispatch queue
-void DispatchQueue::dispatch(const fp_t& callback)
+// Adds a callback item to the dispatch queue.
+void DispatchQueue::dispatch(const WorkItem& callback)
 {
 	std::unique_lock<std::mutex> lock(_lock);
-	_queue.push(callback);
+	_standard_queue.push(callback);
 
 	// Manual unlocking is done before notifying, to avoid waking up
-	// the waiting thread only to block again (see notify_one for details)
+	// the waiting thread only to block again (see notify_one for details).
 	lock.unlock();
 	_cv.notify_all();
 }
 
-void DispatchQueue::schedule_on_interval(const fp_t& callback, const unsigned interval_ms)
+// Priority dispatch. Lower numbers are higher priority.
+void DispatchQueue::dispatch(const PriorityWorkItem& callback)
 {
-	auto timed_dispatch = [this](const fp_t& callback, const unsigned interval_ms)
+	std::unique_lock<std::mutex> lock(_lock);
+
+	auto it = _priority_queue.begin();
+	for ( ; it != _priority_queue.end(); it++)
+	{
+		if (callback.priority < it->priority)
+		{
+			_priority_queue.insert(it, callback);
+			break;
+		}
+	}
+	// We reached the end of the list and didn't get to cut the line :(
+	if (it == _priority_queue.end())
+	{
+		_priority_queue.push_back(callback);
+	}
+
+	// Manual unlocking is done before notifying, to avoid waking up
+	// the waiting thread only to block again (see notify_one for details).
+	lock.unlock();
+	_cv.notify_all();
+}
+
+// TODO: use just a single thread with a TimedDispatcher class. This guy can just sleep until the
+// next deadline for a work item that needs to be run. After dispatching an item to the queue, it
+// will check which item in its own queue is up next, move its queue pointer to that item and then
+// sleep for that time delta. On wakeup it will just call dispatch().
+void DispatchQueue::schedule_on_interval(const WorkItem& callback, const unsigned interval_ms)
+{
+	auto timed_dispatch = [this](const WorkItem& callback, const unsigned interval_ms)
 	{
 		do
 		{
@@ -101,7 +131,7 @@ void DispatchQueue::schedule_on_interval(const fp_t& callback, const unsigned in
 
 	auto thread = std::thread(timed_dispatch, callback, interval_ms);
 
-	// We want to keep track of our timer threads so we can shut down properly
+	// We want to keep track of our timer threads so we can shut down properly.
 	_timer_threads.push_back(std::move(thread));
 }
 
@@ -112,17 +142,33 @@ void DispatchQueue::dispatch_thread_handler(void)
 
 	do
 	{
-		// Wait until we have data
+		// Wait until we have data.
+		// Condition_variable::wait(...) always evaluates predicate and
+		// continues if true, and blocks if false.
 		_cv.wait(lock, [this]
-			{ return (!_queue.empty() || _should_exit); }
+			{ return (!_standard_queue.empty() || !_priority_queue.empty() || _should_exit); }
 		);
 
-		// After wait, we own the lock
-		if (!_queue.empty() && !_should_exit)
+		// After wait, we own the lock.
+		// We also know that the queue is not empty, as we just took the lock, checked
+		// if empty, and then continued because it was not empty.
+		if (!_should_exit)
 		{
-			// Find first ready item
-			auto callback = std::move(_queue.front());
-			_queue.pop();
+			fp_t work;
+
+			// Check priority queue first
+			if (!_priority_queue.empty())
+			{
+				PriorityWorkItem item = std::move(_priority_queue.front());
+				_priority_queue.pop_front();
+				work = item.work;
+			}
+			else
+			{
+				WorkItem item = std::move(_standard_queue.front());
+				_standard_queue.pop();
+				work = item.work;
+			}
 
 			// TODO: add a check to see if the queue is empty, and if so, signal 
 			// that we are out of useful work to do. Alternatively, run background
@@ -130,7 +176,7 @@ void DispatchQueue::dispatch_thread_handler(void)
 
 			lock.unlock();
 
-			callback();
+			work();
 
 			// It's worth noting that condition variable's wait function requires a lock. If 
 			// the thread is waiting for data, it will release the mutex and only re-lock when 
