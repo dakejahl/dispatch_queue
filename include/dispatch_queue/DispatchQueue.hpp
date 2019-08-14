@@ -36,7 +36,7 @@ typedef std::function<void(void)> fp_t;
 
 struct WorkItem
 {
-	WorkItem(fp_t work)
+	WorkItem(const fp_t work)
 	: work(work)
 	{}
 
@@ -46,7 +46,7 @@ struct WorkItem
 
 struct PriorityWorkItem
 {
-	PriorityWorkItem(fp_t work, uint8_t priority)
+	PriorityWorkItem(const fp_t work, const uint8_t priority)
 	: work(work)
 	, priority(priority)
 	{}
@@ -55,14 +55,27 @@ struct PriorityWorkItem
 	fp_t work;
 };
 
+struct TimedWorkItem
+{
+	WorkItem(const fp_t work, const unsigned interval_ms)
+	: work(work)
+	, timeout(interval_ms)
+	{}
+
+	fp_t work;
+	unsigned timeout;
+};
+
+
 class DispatchQueue
 {
 public:
-	DispatchQueue(std::string name, size_t thread_count = 1);
+	DispatchQueue(const std::string name, size_t thread_count = 1);
 	~DispatchQueue();
 
 	void dispatch(const WorkItem& callback);
 	void dispatch(const PriorityWorkItem& callback);
+	void dispatch(const TimedWorkItem& callback);
 
 	void schedule_on_interval(const WorkItem& callback, const unsigned interval_ms);
 	bool empty(void)
@@ -73,16 +86,22 @@ public:
 
 private:
 	void dispatch_thread_handler(void);
-	void join_timer_threads(void);
+	void timed_dispatch_thread_handler(void);
+
+	void join_timer_thread(void);
 	void join_worker_threads(void);
 
 	std::string _name;
+	std::atomic<bool> _should_exit {};
+
 	std::queue<WorkItem> _standard_queue;
+
 	std::list<PriorityWorkItem> _priority_queue;
+	std::list<TimedWorkItem> _timed_queue;
+
 	std::vector<std::thread> _worker_threads;
-	std::vector<std::thread> _timer_threads;
+	std::thread _timer_thread;
+
 	std::mutex _lock;
 	std::condition_variable _cv;
-
-	std::atomic<bool> _should_exit {};
 };

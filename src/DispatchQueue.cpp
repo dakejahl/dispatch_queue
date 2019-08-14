@@ -32,6 +32,9 @@ DispatchQueue::DispatchQueue(std::string name, size_t thread_count)
 	{
 		t = std::thread(&DispatchQueue::dispatch_thread_handler, this);
 	}
+
+	// Create a single timer thread that dispatches callables after some interval
+	_timer_thread = std::thread(&DispatchQueue::timed_dispatch_thread_handler, this);
 }
 
 DispatchQueue::~DispatchQueue()
@@ -44,22 +47,18 @@ DispatchQueue::~DispatchQueue()
 	_cv.notify_all();
 
 	// Wait for threads to finish their work before we exit.
-	join_timer_threads();
+	join_timer_thread();
 	join_worker_threads();
 
 	printf("\nDispatchQueue destroyed\n");
 }
 
-void DispatchQueue::join_timer_threads()
+void DispatchQueue::join_timer_thread()
 {
-	unsigned i = 0;
-	for (auto& t : _timer_threads)
+	if (_timer_thread.joinable())
 	{
-		if (t.joinable())
-		{
-			printf("Joining timer thread %u\n", i++);
-			t.join();
-		}
+		printf("Joining timed dispatch thread");
+		_timer_thread.join();
 	}
 }
 
@@ -76,7 +75,7 @@ void DispatchQueue::join_worker_threads()
 	}   
 }
 
-// Adds a callback item to the dispatch queue.
+// Adds a callback item to the standard dispatch queue.
 void DispatchQueue::dispatch(const WorkItem& callback)
 {
 	std::unique_lock<std::mutex> lock(_lock);
@@ -88,7 +87,19 @@ void DispatchQueue::dispatch(const WorkItem& callback)
 	_cv.notify_all();
 }
 
-// Priority dispatch. Lower numbers are higher priority.
+// Adds a timed callback item to the timed dispatch queue.
+void DispatchQueue::dispatch(const TimedWorkItem& callback)
+{
+	std::unique_lock<std::mutex> lock(_lock);
+	_timed_queue.push(callback);
+
+	// Manual unlocking is done before notifying, to avoid waking up
+	// the waiting thread only to block again (see notify_one for details).
+	lock.unlock();
+	_cv.notify_all();
+}
+
+// Adds an item to the priority queue which will be run immedietly.
 void DispatchQueue::dispatch(const PriorityWorkItem& callback)
 {
 	std::unique_lock<std::mutex> lock(_lock);
@@ -137,6 +148,26 @@ void DispatchQueue::schedule_on_interval(const WorkItem& callback, const unsigne
 
 	// We want to keep track of our timer threads so we can shut down properly.
 	_timer_threads.push_back(std::move(thread));
+}
+
+void DispatchQueue::schedule_on_interval(const WorkItem& callback, const unsigned interval_ms)
+{
+	// Add callback to the _timed_queue
+	TimedWorkItem work(callback.work, interval_ms);
+
+	dispatch(work);
+}
+
+void DispatchQueue::timed_dispatch_thread_handler(void);
+{
+	// Wait until the _timed_queue has something sent to it
+	_cv.wait(lock, [this]
+		{ return (!_timed_queue.empty() || _should_exit); }
+	);
+
+	// Check and see when we need to wake up next
+
+
 }
 
 void DispatchQueue::dispatch_thread_handler(void)
