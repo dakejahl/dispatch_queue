@@ -1,7 +1,7 @@
 The dispatch_queue is built as a library. Include it in your project like:
 
 #### CMake
-`target_link_libraries(app mylib1)`
+`target_link_libraries(your_app dispatch_queue)`
 
 #### Source file
 `#include <dispatch_queue/DispatchQueue.hpp>`
